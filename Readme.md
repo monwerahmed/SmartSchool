@@ -42,8 +42,8 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/ASGSHOP/Apars_School_Management_Backend
-cd Apars_School_Management_Backend
+git clone https://github.com/monwerahmed/SmartSchool.git
+cd SmartSchool
 npm install
 cp .env.example .env        # fill in your credentials
 npx prisma generate
@@ -65,7 +65,7 @@ Password: admin123
 ```env
 NODE_ENV=development
 PORT=9090
-DATABASE_URL="postgresql://user:pass@localhost:5432/school_db?schema=public"
+DATABASE_URL="postgresql://user:pass@localhost:5432/SmartSchooldb?schema=public"
 
 JWT_SECRET=<min-32-char-random-secret>
 JWT_EXPIRES_IN=1d
@@ -84,7 +84,7 @@ SSLCOMMERZ_STORE_PASSWORD=<your_store_password>
 SSLCOMMERZ_IS_LIVE=false
 ```
 
-> ⚠️ Never commit `.env`. Use 64+ char secrets and `BCRYPT_SALT_ROUNDS=12` in production.
+
 
 ---
 
