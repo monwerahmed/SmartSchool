@@ -42,8 +42,8 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/ASGSHOP/Apars_School_Management_Backend
-cd Apars_School_Management_Backend
+git clone https://github.com/monwerahmed/SmartSchool.git
+cd SmartSchool
 npm install
 cp .env.example .env        # fill in your credentials
 npx prisma generate
