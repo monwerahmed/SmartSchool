@@ -1,0 +1,3 @@
+const createPrincipalIntoDB = async (payload)=>{
+  
+}

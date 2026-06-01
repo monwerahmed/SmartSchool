@@ -1,0 +1,949 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ========================================
+// INSTITUTION
+// ========================================
+model Institution {
+  id     String            @id @default(uuid())
+  name   String
+  code   String            @unique
+  eiin   String?           @unique
+  status InstitutionStatus @default(ACTIVE)
+
+  type    String?
+  email   String?
+  phone   String?
+  address String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  students        Student[]
+  teachers        Teacher[]
+  guardians       Guardian[]
+  academicClasses AcademicClass[]
+  sections        Section[]
+  attendances     Attendance[]
+  subjects        Subject[]
+  exams           Exam[]
+  results         Result[]
+  librarian       Librarian[]
+  bookcategory    BookCategory[]
+  book            Book[]
+  bookborrow      BookBorrow[]
+  fine            Fine[]
+
+  @@map("institutions")
+}
+
+// ========================================
+// ACADEMIC CLASS
+// ========================================
+model AcademicClass {
+  id   String @id @default(uuid())
+  name String // "Class 1", "Class 7", "Class 10"
+
+  academicYear Int // 2025, 2026
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  sections       Section[]
+  classSubjects  AcademicClassSubject[] //
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, institutionId, academicYear])
+  @@map("academic_classes")
+}
+
+// ========================================
+// SECTION
+// ========================================
+model Section {
+  id   String @id @default(uuid())
+  name String // "A", "B", "Science"
+
+  shift    SectionShift @default(MORNING)
+  capacity Int          @default(40)
+
+  classId String
+  class   AcademicClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  enrollments StudentEnrollment[]
+  attendances Attendance[]
+  exams       Exam[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, classId])
+  @@map("sections")
+}
+
+// ========================================
+// SUBJECT (Master Subject List) 
+// ========================================
+model Subject {
+  id   String @id @default(uuid())
+  name String // "Bangla", "English", "Mathematics", "Physics"
+  code String // "BAN", "ENG", "MATH", "PHY"
+
+  // Default values (can be overridden in ClassSubject)
+  defaultTotalMarks   Int @default(100)
+  defaultPassingMarks Int @default(33)
+
+  // Categorization (optional)
+  category SubjectCategory? @default(GENERAL)
+  level    EducationLevel?  @default(SECONDARY)
+
+  description String? // বিষয়ের বিবরণ
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  classSubjects AcademicClassSubject[] //
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([code, institutionId])
+  @@map("subjects")
+}
+
+// ========================================
+// ACADEMIC CLASS SUBJECT (Junction Table) 
+// ========================================
+model AcademicClassSubject {
+  id String @id @default(uuid())
+
+  // কোন Class
+  classId String
+  class   AcademicClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  // কোন Subject
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  // Class-specific configuration (override subject defaults)
+  totalMarks   Int     @default(100) // এই class এ এই subject এর full marks
+  passingMarks Int     @default(33)  // এই class এ এই subject এর pass marks
+  isCompulsory Boolean @default(true) // বাধ্যতামূলক নাকি ঐচ্ছিক
+
+  // Teacher assignment (optional - ভবিষ্যতে use হবে)
+  teacherId String?
+  teacher   Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  examSubjects ExamSubject[] // 
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // একটা class এ একই subject দুইবার থাকতে পারবে না
+  @@unique([classId, subjectId])
+  @@index([classId])
+  @@index([subjectId])
+  @@map("academic_class_subjects")
+}
+
+// ========================================
+// USER & AUTHENTICATION
+// ========================================
+model User {
+  id       String     @id @default(uuid())
+  username String     @unique
+  email    String     @unique
+  password String
+  isActive UserStatus @default(ACTIVE)
+
+  institutionId String?
+  institution   Institution? @relation(fields: [institutionId], references: [id])
+
+  userRoles UserRole[]
+
+  student  Student?
+  teacher  Teacher?
+  guardian Guardian?
+  librarian Librarian?
+
+  // --- Library Transaction Relations ---
+  // These track which STAFF member performed the action
+  issuedBorrows   BookBorrow[] @relation("IssuedBy")
+  returnedBorrows BookBorrow[] @relation("ReturnedBy")
+
+  markedAttendances Attendance[] @relation("MarkedAttendances")
+  enteredResults    Result[]     @relation("EnteredResults")
+  otps              OTP[]
+  paymentLogs       PaymentLog[]
+
+  isFirstLogin  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([institutionId])
+  @@map("users")
+}
+
+// ========================================
+// ROLES & PERMISSIONS
+// ========================================
+model Role {
+  id          String   @id @default(uuid())
+  name        RoleName @unique
+  description String?
+
+  userRoles   UserRole[]
+  permissions RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id       String             @id @default(uuid())
+  roleId   String
+  resource Resource
+  actions  PermissionAction[]
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource])
+  @@map("role_permissions")
+}
+
+// ========================================
+// STUDENT
+// ========================================
+model Student {
+  id              String      @id @default(uuid())
+  studentCode     String      @unique
+  fullNameBangla  String?
+  fullNameEnglish String
+  dateOfBirth     DateTime
+  gender          Gender
+  bloodGroup      BloodGroup?
+
+  phone   String?
+  address String?
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  guardianStudents GuardianStudent[]
+  enrollments      StudentEnrollment[]
+  attendances      Attendance[]
+  results          Result[]
+  bookborrow       BookBorrow[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //photo + file uploading attributes
+  profilePhotoUrl  String?
+  profilePhotoId   String?
+  documentFileUrl  String?
+  documentFileId   String?
+  documentFileType String?
+
+
+  @@map("students")
+}
+
+// ========================================
+// STUDENT ENROLLMENT
+// ========================================
+model StudentEnrollment {
+  id String @id @default(uuid()) 
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  academicYear Int
+
+  rollNumber String?
+
+  status EnrollmentStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, academicYear])
+  @@map("student_enrollments")
+}
+
+// ========================================
+// TEACHER
+// ========================================
+model Teacher {
+  id              String      @id @default(uuid())
+  teacherCode     String      @unique
+  fullNameBangla  String?
+  fullNameEnglish String
+  dateOfBirth     DateTime?
+  gender          Gender
+  bloodGroup      BloodGroup?
+  subject         String?
+  
+
+  qualification String?
+  department    String?
+  designation   String?
+  joiningDate   DateTime?
+
+  phone   String?
+  email   String?
+  address String?
+  nid     String? @unique
+
+  salary Float?
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  assignedSubjects AcademicClassSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //photo + file uploading attributes
+  profilePhotoUrl  String?
+  profilePhotoId   String?
+  documentFileUrl  String?
+  documentFileId   String?
+  documentFileType String?
+
+
+  @@map("teachers")
+}
+
+// ========================================
+// GUARDIAN/PARENT
+// ========================================
+model Guardian {
+  id              String  @id @default(uuid())
+  guardianCode    String  @unique
+  fullNameBangla  String?
+  fullNameEnglish String
+
+  phone   String
+  email   String?
+  address String?
+  nid     String? @unique
+
+  occupation    String?
+  monthlyIncome Float?
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  guardianStudents GuardianStudent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //photo + file uploading attributes
+  profilePhotoUrl  String?
+  profilePhotoId   String?
+  documentFileUrl  String?
+  documentFileId   String?
+  documentFileType String?
+
+  @@map("guardians")
+}
+
+// ========================================
+// GUARDIAN-STUDENT RELATIONSHIP
+// ========================================
+model GuardianStudent {
+  id           String           @id @default(uuid())
+  guardianId   String
+  studentId    String
+  relationship RelationshipType
+  isPrimary    Boolean          @default(false)
+
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([guardianId, studentId])
+  @@map("guardian_students")
+}
+
+// ========================================
+// ATTENDANCE
+// ========================================
+model Attendance {
+  id String @id @default(uuid())
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  date   DateTime         @db.Date
+  status AttendanceStatus
+
+  remarks String?
+
+  markedById String
+  markedBy   User   @relation("MarkedAttendances", fields: [markedById], references: [id])
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, date])
+  @@index([sectionId, date])
+  @@index([studentId, date])
+  @@index([institutionId, date])
+  @@index([date])
+  @@map("attendances")
+}
+
+// ========================================
+// EXAM
+// ========================================
+model Exam {
+  id   String   @id @default(uuid())
+  name String // "Midterm Exam 2025", "Final Exam 2025"
+  type ExamType
+
+  academicYear Int
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  examSubjects ExamSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sectionId, academicYear])
+  @@map("exams")
+}
+
+// ========================================
+// EXAM SUBJECT (Junction)
+// ========================================
+model ExamSubject {
+  id String @id @default(uuid())
+
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+
+  classSubjectId String
+  classSubject   AcademicClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+
+  // Marks can override ClassSubject defaults (special exam এর জন্য)
+  totalMarks   Int? // null থাকলে classSubject থেকে নিবে
+  passingMarks Int? // null থাকলে classSubject থেকে নিবে
+
+  examDate DateTime? @db.Date // এই subject এর exam কবে
+
+  results Result[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([examId, classSubjectId])
+  @@index([examId])
+  @@index([classSubjectId])
+  @@map("exam_subjects")
+}
+
+// ========================================
+// RESULT
+// ========================================
+model Result {
+  id String @id @default(uuid())
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  examSubjectId String
+  examSubject   ExamSubject @relation(fields: [examSubjectId], references: [id], onDelete: Cascade)
+
+  marksObtained Float @default(0)
+  grade         String @default("Absent")// A+, A, A-, B, C, D, F
+  gpa           Float  @default(0.0)// 5.0, 4.0, 3.5, etc.
+
+  remarks String? 
+
+  enteredById String
+  enteredBy   User   @relation("EnteredResults", fields: [enteredById], references: [id])
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, examSubjectId]) // একই student, একই exam-subject এ একবার result
+  @@index([examSubjectId])
+  @@index([studentId])
+  @@map("results")
+}
+// ========================================
+// ADD TO EXISTING Institution model relations:
+// ========================================
+// librarians     Librarian[]
+// bookCategories BookCategory[]
+// books          Book[]
+// bookBorrows    BookBorrow[]
+// fines           Fine[]
+
+// ========================================
+// ADD TO EXISTING User model relations:
+// ========================================
+// librarian      Librarian?
+// issuedBorrows  BookBorrow[] @relation("IssuedBy")
+// returnedBorrows BookBorrow[] @relation("ReturnedBy")
+
+// ========================================
+// LIBRARIAN
+// ========================================
+model Librarian {
+  id              String      @id @default(uuid())
+  librarianCode   String      @unique
+  fullNameBangla  String?
+  fullNameEnglish String
+  dateOfBirth     DateTime?
+  gender          Gender
+  bloodGroup      BloodGroup?
+
+  qualification String?
+  designation   String?
+  joiningDate   DateTime?
+
+  phone   String?
+  email   String?
+  address String?
+  nid     String? @unique
+
+  salary Float?
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //photo + file uploading attributes
+  profilePhotoUrl  String?
+  profilePhotoId   String?
+  documentFileUrl  String?
+  documentFileId   String?
+  documentFileType String?
+
+
+  @@map("librarians")
+}
+
+// ========================================
+// BOOK CATEGORY
+// ========================================
+model BookCategory {
+  id          String  @id @default(uuid())
+  name        String  // "Science Fiction", "Mathematics", "Islamic Studies"
+  description String?
+  color       String? // Hex color for UI display e.g. "#FF5733"
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  books Book[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, institutionId])
+  @@map("book_categories")
+}
+
+// ========================================
+// BOOK
+// ========================================
+model Book {
+  id          String  @id @default(uuid())
+  isbn        String? // International Standard Book Number
+  title       String
+  author      String
+  publisher   String?
+  edition     String?
+  language    String  @default("Bengali")
+  description String?
+
+  // Physical details
+  totalCopies     Int @default(1)
+  availableCopies Int @default(1) // decrements on borrow, increments on return
+
+  // Location in library
+  shelfNumber String?
+  rackNumber  String?
+
+  publishedYear Int?
+
+  status BookStatus @default(AVAILABLE)
+
+  // Category
+  categoryId String
+  category   BookCategory @relation(fields: [categoryId], references: [id])
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  borrows BookBorrow[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([title])
+  @@index([author])
+  @@index([isbn])
+  @@index([categoryId])
+  @@index([institutionId])
+  @@map("books")
+}
+
+// ========================================
+// BOOK BORROW (Issue & Return Tracking)
+// ========================================
+model BookBorrow {
+  id String @id @default(uuid())
+
+  bookId String
+  book   Book   @relation(fields: [bookId], references: [id])
+
+  // Borrower - either student or teacher
+
+  studentId    String
+  student      Student @relation(fields: [studentId], references: [id])
+
+  borrowDate DateTime  @default(now())
+  dueDate    DateTime  // Expected return date
+  returnDate DateTime? // Actual return date (null = not yet returned)
+
+  status BorrowStatus @default(BORROWED)
+
+  // Issued by (librarian/admin)
+  issuedById String
+  issuedBy   User   @relation("IssuedBy", fields: [issuedById], references: [id])
+
+  // Returned to (librarian/admin), null until returned
+  returnedById String?
+  returnedBy   User?   @relation("ReturnedBy", fields: [returnedById], references: [id])
+
+  notes String?
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  fine Fine?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bookId])
+  @@index([studentId])
+
+  @@index([status])
+  @@index([institutionId])
+  @@map("book_borrows")
+}
+
+// ========================================
+// FINE
+// ========================================
+model Fine {
+  id String @id @default(uuid())
+
+  borrowId String     @unique
+  borrow   BookBorrow @relation(fields: [borrowId], references: [id], onDelete: Cascade)
+
+  overdueDays   Int   // Number of days overdue
+  perDayCharge  Float @default(5.0) // BDT per day
+  totalAmount   Float // overdueDays * perDayCharge
+
+  status    FineStatus @default(PENDING)
+  paidAt    DateTime?
+  paidAmount Float?
+
+  remarks String?
+
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([borrowId])
+  @@index([status])
+  @@index([institutionId])
+  @@map("fines")
+}
+
+//===============================
+//OTP Schema
+//===============================
+
+model OTP {
+  id        String   @id @default(uuid())
+ 
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+ 
+  otpHash   String   // bcrypt hashed OTP — never store plain text
+  purpose   OTPPurpose
+  expiresAt DateTime // now + 5 minutes
+ 
+  createdAt DateTime @default(now())
+ 
+  // One active OTP per user per purpose at a time
+  @@unique([userId, purpose])
+  @@index([userId])
+  @@map("otps")
+}
+
+
+// ========================================
+// Payment Log model
+// ========================================
+model PaymentLog {
+  id                 String            @id @default(uuid())
+  userId             String            // The user making payment
+  user               User              @relation(fields: [userId], references: [id])
+
+  invoiceId          String            // Reference to what they are paying for (e.g., Monthly Fee)
+  tranId             String?           @unique //Unique transaction ID generated by us
+  valId              String?           // Validation ID returned by the gateway (used for security verification)
+
+  amount             Float
+  currency           String            @default("BDT")
+  status             PaymentStatus     @default(PENDING)
+  paymentMehtod      String?           // bKash, Nagad, Visa
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([tranId])
+  @@index([userId])
+}
+
+enum PaymentStatus{
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum BookStatus {
+  AVAILABLE    // Books available to borrow
+  UNAVAILABLE  // All copies borrowed out
+  LOST         // Reported lost
+  DAMAGED      // Damaged, under repair
+}
+
+
+
+enum BorrowStatus {
+  BORROWED   // Currently borrowed
+  RETURNED   // Returned on time or with fine paid
+  OVERDUE    // Past due date, not returned
+  LOST       // Borrower reported the book lost
+}
+
+enum FineStatus {
+  PENDING  // Fine issued, not yet paid
+  PAID     // Fine paid
+  WAIVED   // Fine waived by admin/librarian
+}
+// ========================================
+// ENUMS
+// ========================================
+enum InstitutionStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum RoleName {
+  SUPER_ADMIN
+  ADMIN
+  PRINCIPAL
+  VICE_PRINCIPAL
+  TEACHER
+  STUDENT
+  GUARDIAN
+  ACCOUNTANT
+  LIBRARIAN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum BloodGroup {
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+  O_POSITIVE
+  O_NEGATIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum Resource {
+  INSTITUTION
+  USER
+  STUDENT
+  TEACHER
+  GUARDIAN
+  ATTENDANCE
+  RESULT
+  EXAM
+  LIBRARY
+  ACCOUNT
+  REPORT
+  ACADEMIC_CLASS
+  SECTION
+  ENROLLMENT
+  SUBJECT
+  LIBRARIAN
+}
+
+enum PermissionAction {
+  VIEW
+  CREATE
+  UPDATE
+  DELETE
+  MANAGE
+}
+
+enum RelationshipType {
+  FATHER
+  MOTHER
+  BROTHER
+  SISTER
+  UNCLE
+  AUNT
+  GRANDFATHER
+  GRANDMOTHER
+  LEGAL_GUARDIAN
+  OTHER
+}
+
+enum SectionShift {
+  MORNING
+  DAY
+  EVENING
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  TRANSFERRED
+  PASSED
+  DROPPED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEAVE
+}
+
+enum ExamType {
+  CLASS_TEST
+  MIDTERM
+  FINAL
+  TERM_END
+  WEEKLY_TEST
+}
+
+
+enum SubjectCategory {
+  SCIENCE      // বিজ্ঞান - Physics, Chemistry, Biology
+  MATHEMATICS  // গণিত - Math, Higher Math
+  LANGUAGES    // ভাষা - Bangla, English
+  SOCIAL       // সমাজবিজ্ঞান - History, Geography, Civics
+  COMMERCE     // বাণিজ্য - Accounting, Business
+  ARTS         // কলা - Drawing, Music
+  GENERAL      // সাধারণ
+  VOCATIONAL   // কারিগরি
+  RELIGIOUS    // ধর্মীয়
+}
+
+enum EducationLevel {
+  PRIMARY          // প্রাথমিক (Class 1-5)
+  JUNIOR           // নিম্ন মাধ্যমিক (Class 6-8)
+  SECONDARY        // মাধ্যমিক (Class 9-10, SSC)
+  HIGHER_SECONDARY // উচ্চ মাধ্যমিক (Class 11-12, HSC)
+}
+
+enum OTPPurpose {
+  CHANGE_USERNAME
+  CHANGE_PASSWORD
+}
